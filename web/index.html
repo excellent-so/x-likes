@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>x-likes</title>
+    <meta name="description" content="A local, searchable archive of your X likes." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20width='16'%20height='16'%20fill='currentColor'%3E%3Cstyle%3Esvg{color:%230a0a0a}@media%20(prefers-color-scheme:dark){svg{color:%23f2f2f2}}%3C/style%3E%3Cpath%20d='M8%2014.5%202.4%208.9A3.4%203.4%200%200%201%208%204.2a3.4%203.4%200%200%201%205.6%204.7Z'/%3E%3C/svg%3E" />
+    <!-- Light by default whatever the OS says; dark is the reader's choice, restored before the first paint. -->
+    <script>try{if(localStorage.getItem('ex-theme')==='dark')document.documentElement.classList.add('theme-dark')}catch(e){}</script>
+    <link rel="stylesheet" href="/kit/fonts.css" />
+    <link rel="stylesheet" href="/kit/kit.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/kit/kit.js" defer></script>
+  </head>
+  <body class="ex-page">
+    <a class="ex-skip" href="#main">Skip to your likes</a>
+
+    <header class="xl-top" id="top">
+      <div class="xl-top__inner">
+        <a class="xl-brand" href="/"><svg class="ex-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 14.5 2.4 8.9A3.4 3.4 0 0 1 8 4.2a3.4 3.4 0 0 1 5.6 4.7Z"/></svg>x-likes</a>
+
+        <div class="xl-search" id="searchBox" role="search">
+          <svg class="xl-search__icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
+            <path d="M16.5 16.5L21 21" fill="none" stroke="currentColor" stroke-width="2" />
+          </svg>
+          <label class="ex-sr-only" for="q">Search your likes</label>
+          <input
+            id="q"
+            class="ex-input"
+            type="search"
+            placeholder="Search everything you've saved"
+            autocomplete="off"
+            spellcheck="false"
+            autofocus
+          />
+          <button id="clearQ" class="ex-btn ex-btn--ghost ex-btn--sm ex-btn--icon xl-search__clear" type="button" hidden aria-label="Clear search">
+            <span class="ex-glyph ex-glyph--cross" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="xl-top__end">
+          <button class="ex-btn ex-btn--outline xl-theme" type="button" data-ex-theme-toggle aria-pressed="false">Dark</button>
+          <button id="filterBtn" class="ex-btn ex-btn--outline xl-filter-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="filterPanel">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M3 6h18M6 12h12M10 18h4" fill="none" stroke="currentColor" stroke-width="2" />
+            </svg>
+            <span>Filter</span>
+            <span id="filterCount" class="ex-badge ex-badge--count" hidden></span>
+          </button>
+
+          <!-- Filter popover -->
+          <div id="filterPanel" class="xl-panel ex-float" hidden>
+            <section class="xl-panel__sec">
+              <h2 class="xl-panel__label" id="lblShow">Show</h2>
+              <div class="xl-seg" id="typeSeg" role="group" aria-labelledby="lblShow">
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-type="all" aria-pressed="true">Everything</button>
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-type="image" aria-pressed="false">Images <span class="xl-n" id="cntImg"></span></button>
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-type="link" aria-pressed="false">Links <span class="xl-n" id="cntLink"></span></button>
+              </div>
+            </section>
+
+            <section class="xl-panel__sec">
+              <h2 class="xl-panel__label" id="lblSort">Sort</h2>
+              <div class="xl-seg" id="sortSeg" role="group" aria-labelledby="lblSort">
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-sort="newest" aria-pressed="true">Newest</button>
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-sort="oldest" aria-pressed="false">Oldest</button>
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-sort="liked" aria-pressed="false">Recently liked</button>
+                <button type="button" class="ex-btn ex-btn--outline ex-btn--sm xl-toggle" data-sort="relevance" aria-pressed="false" title="Search for something first">Best match</button>
+              </div>
+            </section>
+
+            <section class="xl-panel__sec" id="tagSec" hidden>
+              <h2 class="xl-panel__label" id="lblTags">Tags</h2>
+              <div class="xl-cloud" id="tagCloud" role="group" aria-labelledby="lblTags"></div>
+            </section>
+
+            <section class="xl-panel__sec" id="peopleSec">
+              <h2 class="xl-panel__label" id="lblPeople">People</h2>
+              <div class="xl-people" id="peopleList" role="group" aria-labelledby="lblPeople"></div>
+            </section>
+
+            <div class="xl-panel__foot">
+              <button id="clearAll" class="ex-btn ex-btn--outline" type="button" disabled>Clear all filters</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="chips" class="xl-chips" hidden></div>
+    </header>
+
+    <main class="xl-stage" id="main">
+      <div id="grid" class="grid"></div>
+      <div id="empty" hidden></div>
+      <div id="sentinel" class="sentinel"></div>
+      <div id="status" class="xl-status" role="status"></div>
+    </main>
+
+    <!-- Detail view -->
+    <div id="detail" class="detail" role="dialog" aria-modal="true" aria-label="Like" hidden>
+      <button class="xl-float-btn d-close" id="dClose" type="button" aria-label="Close">
+        <span class="ex-glyph ex-glyph--cross" aria-hidden="true"></span>
+      </button>
+      <button class="xl-float-btn d-nav d-prev" id="dPrev" type="button" aria-label="Previous like">
+        <span class="ex-glyph ex-glyph--back" aria-hidden="true"></span>
+      </button>
+      <button class="xl-float-btn d-nav d-next" id="dNext" type="button" aria-label="Next like">
+        <span class="ex-glyph ex-glyph--arrow" aria-hidden="true"></span>
+      </button>
+      <div class="d-panel ex-float" id="dPanel">
+        <div class="d-media" id="dMedia"></div>
+        <div class="d-info" id="dInfo"></div>
+      </div>
+    </div>
+
+    <!-- Image zoom (over the detail view) -->
+    <div id="zoom" class="zoom-layer" hidden><img id="zoomImg" alt="" /></div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

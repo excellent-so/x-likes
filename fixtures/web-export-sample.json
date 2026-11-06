@@ -1,0 +1,33 @@
+[
+  {
+    "id": "1600000000000000001",
+    "screen_name": "localfirst",
+    "name": "Local First",
+    "full_text": "CRDTs let apps sync offline and merge without conflicts. The future is local-first software. https://t.co/abc",
+    "created_at": "2024-05-01T12:00:00.000Z",
+    "favorite_count": 1234,
+    "media": [
+      { "type": "photo", "media_url_https": "https://pbs.twimg.com/media/GExample0001.jpg", "ext_alt_text": "a diagram of peer to peer sync" }
+    ],
+    "entities": {
+      "urls": [
+        { "expanded_url": "https://www.inkandswitch.com/local-first/", "display_url": "inkandswitch.com/local-first" }
+      ]
+    }
+  },
+  {
+    "rest_id": "1600000000000000002",
+    "core": { "user_results": { "result": { "legacy": { "screen_name": "rustlang", "name": "The Rust Programming Language" } } } },
+    "legacy": {
+      "full_text": "Ownership and borrowing eliminate whole classes of bugs at compile time. No GC, no data races.",
+      "created_at": "Wed May 01 12:30:00 +0000 2024",
+      "favorite_count": 999,
+      "entities": { "urls": [ { "expanded_url": "https://doc.rust-lang.org/book/", "display_url": "doc.rust-lang.org/book" } ] },
+      "extended_entities": { "media": [ { "type": "photo", "media_url_https": "https://pbs.twimg.com/media/GExample0002.jpg", "ext_alt_text": "rust logo" } ] }
+    }
+  },
+  {
+    "id": "1600000000000000003",
+    "full_text": "A bare record with only id + text (no author) — should import as a pending like for `pnpm hydrate` to finish."
+  }
+]

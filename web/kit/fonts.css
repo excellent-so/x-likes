@@ -1,0 +1,5 @@
+/* @excellent-so/kit: fonts. Geist and Geist Mono (SIL Open Font License 1.1, fonts/OFL.txt), variable,
+   one file each. Link this file from a page that can serve the fonts/ folder beside it; a page that can't
+   (a single-file viewer) leaves it out and the system faces take over. */
+@font-face { font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }

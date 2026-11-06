@@ -1,0 +1,377 @@
+/* x-likes: the app's own layout, on the tokens and parts of @excellent-so/kit 0.2.1 (web/kit/, MIT).
+   Ink on white, light by default; dark is `.theme-dark` on <html>, the reader's choice (kit.js). Nothing here
+   reads prefers-color-scheme. Amber appears only as the kit's Copied state; red only for a failed search.
+   Everything else is ink and greys. Parts the kit doesn't have yet are marked "kit gap". */
+
+/* Kit parts set `display`, which beats the hidden attribute; here hidden always wins. (kit gap) */
+[hidden] { display: none !important; }
+
+:root {
+  --xl-max: 1440px;     /* content width, as .ex-main */
+  --xl-gap: 16px;       /* masonry gutter: keep in step with GAP in app.js */
+  --xl-scrim: rgb(14 14 14 / 0.5);
+}
+.theme-dark { --xl-scrim: rgb(0 0 0 / 0.7); }
+
+body { min-height: 100vh; }
+
+/* --- Top bar: brand, search, theme, filter ------------------------------------------------------------ */
+/* .ex-topbar is 48px tall, sized for small controls; this one holds a 44px field, so it pads instead. */
+
+.xl-top {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.xl-top__inner,
+.xl-chips,
+.xl-stage { max-width: var(--xl-max); margin: 0 auto; padding-inline: 16px; }
+.xl-top__inner { display: flex; align-items: center; gap: 12px; padding-block: 12px; }
+
+.xl-brand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control-h);
+  color: var(--color-strong);
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+/* A search field with a leading icon and a clear button inside it. (kit gap: .ex-search is a field and a count) */
+.xl-search { position: relative; flex: 1 1 auto; max-width: 640px; margin-inline: auto; }
+.xl-search .ex-input { padding-left: 40px; padding-right: 44px; }
+.xl-search .ex-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.xl-search__icon { position: absolute; top: 50%; left: 14px; color: var(--color-subtle); transform: translateY(-50%); pointer-events: none; }
+.xl-search__clear { position: absolute; top: 2px; right: 2px; }
+.xl-search__clear::after { content: none; }
+
+.xl-top__end { position: relative; display: flex; flex: none; align-items: center; gap: 8px; }
+.xl-filter-btn[aria-expanded="true"] { border-color: var(--color-strong); background: var(--color-muted); }
+/* The theme toggle says it's on with the kit's check, not only with the page's colour. */
+.xl-theme[aria-pressed="true"]::before { content: ""; width: 10px; height: 8px; background: currentColor; -webkit-mask: var(--glyph-check) center / contain no-repeat; mask: var(--glyph-check) center / contain no-repeat; }
+
+/* Active filters under the bar: removable chips. (kit gap) */
+.xl-chips { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 12px; }
+.chip .k { color: var(--color-subtle); font-weight: 400; }
+.chip .ex-glyph { color: var(--color-subtle); }
+.chip:hover .ex-glyph { color: var(--color-strong); }
+
+/* --- Filter popover (an .ex-float) --------------------------------------------------------------------- */
+
+.xl-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 50;
+  width: 344px;
+  max-width: calc(100vw - 32px);
+  max-height: min(78vh, 680px);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+}
+.xl-panel__sec { padding: 16px; }
+.xl-panel__sec + .xl-panel__sec { border-top: 1px solid var(--color-border); }
+.xl-panel__label { margin-bottom: 12px; color: var(--color-subtle); font-size: var(--text-2xs); font-weight: 500; line-height: 1rem; letter-spacing: 0; }
+.xl-panel__foot { padding: 12px 16px 16px; border-top: 1px solid var(--color-border); }
+.xl-panel__foot .ex-btn { width: 100%; }
+
+/* Toggle buttons: pressed is an ink fill with the kit's check, so the state never rests on colour.
+   (kit gap: no aria-pressed state on .ex-btn) */
+.xl-seg { display: flex; flex-wrap: wrap; gap: 8px; }
+.xl-cloud { display: flex; flex-wrap: wrap; gap: 12px 6px; }
+.xl-toggle .xl-n { color: var(--color-subtle); font-variant-numeric: tabular-nums; }
+.xl-toggle[aria-pressed="true"] { border-color: var(--color-primary); background: var(--color-primary); color: var(--color-primary-foreground); }
+.xl-toggle[aria-pressed="true"]:hover { border-color: var(--color-primary-hover); background: var(--color-primary-hover); }
+.xl-toggle[aria-pressed="true"] .xl-n { color: inherit; }
+.xl-toggle[aria-pressed="true"]::before {
+  content: "";
+  flex: none;
+  width: 10px;
+  height: 8px;
+  background: currentColor;
+  -webkit-mask: var(--glyph-check) center / contain no-repeat;
+  mask: var(--glyph-check) center / contain no-repeat;
+}
+
+.xl-people { display: grid; gap: 2px; }
+.person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-body);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.person:hover { background: var(--color-muted); color: var(--color-strong); }
+.person[aria-pressed="true"] { background: var(--color-muted); color: var(--color-strong); font-weight: 500; }
+.person .h { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person .c { color: var(--color-subtle); font-size: var(--text-2xs); font-variant-numeric: tabular-nums; }
+.person .ex-glyph { visibility: hidden; }
+.person[aria-pressed="true"] .ex-glyph { visibility: visible; }
+
+/* Avatars: the author's picture, or their initial. (kit gap) */
+.av { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--color-muted); object-fit: cover; }
+.av.mono { display: inline-grid; place-items: center; color: var(--color-subtle); font-size: var(--text-2xs); font-weight: 600; line-height: 1; }
+.person .av { width: 28px; height: 28px; }
+
+/* --- The feed: a masonry of cards on the kit's surfaces ----------------------------------------------- */
+
+.xl-stage { padding-top: 24px; padding-bottom: 24px; }
+.grid { display: flex; align-items: flex-start; gap: var(--xl-gap); }
+.col { display: flex; flex: 1 1 0; flex-direction: column; gap: var(--xl-gap); min-width: 0; }
+
+/* A card with its media flush at the top. (kit gap: .ex-card pads every child and has no media slot) */
+.card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-card);
+  color: var(--color-body);
+  cursor: pointer;
+  /* Skip rendering and image decode for off-screen cards; --h (set per card in app.js) reserves the height. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--h, 320px);
+  transition: border-color var(--dur-fast) var(--ease-out-expo);
+}
+.card:hover { border-color: var(--color-field); }
+
+.card-media { position: relative; overflow: hidden; border-bottom: 1px solid var(--color-border); background: var(--color-muted); line-height: 0; }
+.card-media img.hero { display: block; width: 100%; height: auto; object-fit: cover; }
+.count-badge { position: absolute; top: 8px; right: 8px; font-variant-numeric: tabular-nums; }
+/* A play mark over a video's poster. (kit gap) */
+.play-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgb(14 14 14 / 0.72);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.play-glyph::after { content: ""; margin-left: 4px; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 14px solid #fff; }
+/* Hover preview: sits over the poster and fades in once it has a frame; never takes a click. */
+.hover-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out-expo); }
+.hover-vid.on { opacity: 1; }
+.card.previewing .play-glyph { opacity: 0; }
+
+.card-body { display: grid; gap: 12px; padding: 16px; }
+.card .body {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-strong);
+  font-size: var(--text-ui);
+  line-height: 1.375rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 12;
+}
+.link-card .body { -webkit-line-clamp: 6; }
+.text-card.gone .body { color: var(--color-subtle); font-style: italic; }
+.card .snip {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-body);
+  font-size: var(--text-sm);
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.card .lk { overflow: hidden; color: var(--color-subtle); font-family: var(--font-mono); font-size: var(--text-2xs); line-height: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.card-meta { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--color-subtle); font-size: var(--text-meta); line-height: 1.25rem; }
+.card-meta .h { min-width: 0; overflow: hidden; color: var(--color-strong); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.card-meta time { white-space: nowrap; }
+.card-meta .ex-badge { margin-left: auto; }
+
+.card .body a,
+.d-text a { color: var(--color-strong); text-decoration: underline; text-decoration-color: var(--color-border-strong); text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.card .body a:hover,
+.d-text a:hover { text-decoration-color: currentColor; }
+
+/* Search matches: a grey wash and an ink underline, never a colour. (kit gap) */
+mark { padding: 0 1px; border-radius: 2px; background: var(--color-selection); color: var(--color-strong); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+
+.sk { border-radius: var(--radius-lg); }
+
+/* --- Status, empty, error ---------------------------------------------------------------------------- */
+
+.sentinel { height: 1px; }
+.xl-status { min-height: 20px; padding: 24px 0 48px; color: var(--color-subtle); font-size: var(--text-meta); text-align: center; font-variant-numeric: tabular-nums; }
+.xl-status .ex-alert { max-width: 560px; margin: 0 auto; text-align: left; }
+#empty .ex-empty { max-width: 560px; margin: 48px auto 0; }
+#empty .ex-empty--page { max-width: 36rem; margin-top: 64px; }
+
+/* --- Detail view: a floating frame over a scrim (kit gap: no dialog or scrim) ------------------------- */
+
+.detail {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 32px 88px;
+  background: var(--xl-scrim);
+  animation: xl-fade 0.2s var(--ease-out-expo);
+}
+@keyframes xl-fade { from { opacity: 0; } }
+
+.d-panel { display: flex; width: min(1120px, 100%); max-height: 100%; overflow: hidden; border: 1px solid var(--color-border); }
+.d-panel.no-media { width: min(640px, 100%); }
+.d-media {
+  display: flex;
+  flex: 1 1 58%;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-muted);
+}
+.d-media:empty,
+.d-panel.no-media .d-media { display: none; }
+.d-media img { display: block; width: 100%; height: auto; cursor: zoom-in; }
+.d-media video { position: relative; display: block; width: 100%; height: auto; background: #000; }
+
+.d-info { display: flex; flex: 1 1 42%; flex-direction: column; gap: 16px; min-width: 300px; max-width: 440px; padding: 24px; overflow-y: auto; }
+.d-panel.no-media .d-info { flex-basis: 100%; min-width: 0; max-width: none; }
+
+.d-author { display: flex; align-items: flex-start; gap: 12px; }
+.d-author .av { width: 40px; height: 40px; font-size: var(--text-sm); }
+.d-author .nm { display: grid; min-width: 0; }
+.d-author .n { overflow: hidden; color: var(--color-strong); font-size: var(--text-ui); font-weight: 600; line-height: 1.25rem; text-overflow: ellipsis; white-space: nowrap; }
+.d-author .hd { justify-self: start; padding: 0; border: 0; background: none; color: var(--color-subtle); font: inherit; font-size: var(--text-meta); line-height: 1.25rem; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 0.2em; cursor: pointer; }
+.d-author .hd:hover { color: var(--color-strong); text-decoration-color: currentColor; }
+.d-author .dt { margin-left: auto; color: var(--color-subtle); font-size: var(--text-meta); line-height: 1.25rem; white-space: nowrap; }
+
+.d-text { color: var(--color-strong); font-size: var(--text-base); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.d-text.gone { color: var(--color-subtle); font-style: italic; }
+
+.d-links { display: grid; gap: 8px; }
+.d-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-strong);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out-expo);
+}
+.d-linkrow:hover { border-color: var(--color-strong); }
+.d-linkrow .u { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.d-enrich { display: grid; gap: 16px; }
+.d-enrich:empty { display: none; }
+.d-article { display: grid; gap: 4px; padding: 12px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-muted); }
+.d-article .at { color: var(--color-strong); font-size: var(--text-sm); font-weight: 600; line-height: 1.25rem; }
+.d-article .ax { display: -webkit-box; overflow: hidden; color: var(--color-body); font-size: var(--text-meta); line-height: 1.25rem; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.d-article .asrc { margin-top: 4px; color: var(--color-subtle); font-size: var(--text-2xs); line-height: 1rem; font-variant-numeric: tabular-nums; }
+.d-tags { display: flex; flex-wrap: wrap; gap: 12px 6px; }
+
+.d-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-top: 16px; border-top: 1px solid var(--color-border); color: var(--color-subtle); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
+.d-foot .ex-link { min-height: var(--control-h); }
+.d-id { max-width: 100%; margin-left: auto; overflow: hidden; color: var(--color-subtle); font-family: var(--font-mono); font-weight: 400; text-overflow: ellipsis; }
+/* The kit's Copied state (amber), on a button outside .ex-cmd. (kit gap: .is-copied is styled only in .ex-cmd) */
+.d-id.is-copied { border-color: var(--color-verified); background: var(--color-verified); color: var(--color-on-verified); }
+
+.d-related { display: grid; gap: 8px; }
+.d-related .rl { color: var(--color-subtle); font-size: var(--text-2xs); font-weight: 500; line-height: 1rem; letter-spacing: 0; }
+.d-related .rrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rthumb {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-muted);
+  color: var(--color-body);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out-expo);
+}
+.rthumb:hover { border-color: var(--color-field); }
+.rthumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.rthumb .rt { display: -webkit-box; margin: 8px; overflow: hidden; font-size: var(--text-2xs); line-height: 1rem; overflow-wrap: break-word; -webkit-hyphens: auto; hyphens: auto; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+
+/* Buttons that float over the scrim: close, previous, next. */
+.xl-float-btn {
+  position: fixed;
+  z-index: 92;
+  display: grid;
+  place-items: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-card);
+  color: var(--color-strong);
+  box-shadow: var(--shadow-surface-2);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out-expo);
+}
+.xl-float-btn:hover { border-color: var(--color-strong); }
+.d-close { top: 16px; right: 16px; }
+.d-nav { top: 50%; transform: translateY(-50%); }
+.d-prev { left: 24px; }
+.d-next { right: 24px; }
+.d-nav[disabled] { visibility: hidden; }
+
+.zoom-layer { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 0.92); cursor: zoom-out; animation: xl-fade 0.2s var(--ease-out-expo); }
+.zoom-layer img { max-width: 100%; max-height: 100%; border-radius: var(--radius-lg); }
+
+/* --- Widths ------------------------------------------------------------------------------------------ */
+
+@media (min-width: 640px) {
+  .xl-top__inner, .xl-chips, .xl-stage { padding-inline: 24px; }
+}
+@media (min-width: 1024px) {
+  .xl-top__inner, .xl-chips, .xl-stage { padding-inline: 32px; }
+}
+/* A phone: brand and buttons on one row, the search under them. */
+@media (max-width: 639px) {
+  .xl-top__inner { flex-wrap: wrap; gap: 8px 12px; }
+  .xl-search { order: 3; flex-basis: 100%; max-width: none; }
+  .xl-top__end { margin-left: auto; }
+  .xl-stage { padding-top: 16px; }
+}
+@media (max-width: 720px) {
+  .detail { place-items: stretch; padding: 0; }
+  .d-panel, .d-panel.no-media { flex-direction: column; width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
+  .d-media { flex: none; max-height: 46vh; border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .d-info { flex: 1; min-width: 0; max-width: none; padding: 16px 16px 24px; }
+  .d-panel.no-media .d-author { padding-right: 52px; }
+  .d-nav { display: none; }
+  .d-close { top: 8px; right: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

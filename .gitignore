@@ -1,0 +1,27 @@
+node_modules/
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/media/
+data/media-thumbs/
+data/media-video/
+.DS_Store
+*.log
+
+# Your X archive — never commit your personal data
+archive/
+*.zip
+
+# Secrets — never commit
+.env
+.env.local
+
+# Demo/scratch data dirs
+data-mock/
+data-demo/
+mock-archive/
+.test-data-*
+.test-archive-*
+
+# Private notes kept locally, never committed
+.private/

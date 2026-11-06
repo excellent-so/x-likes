@@ -1,0 +1,50 @@
+{
+  "name": "x-likes",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "A local, searchable archive of your X likes: OCR on liked images, linked articles extracted, hybrid search, and an MCP server so Claude can search it.",
+  "license": "MIT",
+  "homepage": "https://github.com/excellent-so/x-likes#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/excellent-so/x-likes.git"
+  },
+  "bugs": {
+    "url": "https://github.com/excellent-so/x-likes/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "cli": "tsx src/cli.ts",
+    "ingest": "tsx src/cli.ts import",
+    "ingest-export": "tsx src/cli.ts ingest-export",
+    "hydrate": "tsx src/cli.ts hydrate",
+    "enrich": "tsx src/cli.ts enrich",
+    "refresh": "tsx src/cli.ts update",
+    "stats": "tsx src/cli.ts stats",
+    "serve": "tsx src/cli.ts serve",
+    "mcp": "tsx src/mcp-server.ts",
+    "test": "tsx test/run.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@mozilla/readability": "^0.6.0",
+    "@xenova/transformers": "^2.17.2",
+    "better-sqlite3": "^11.8.1",
+    "jsdom": "^29.1.1",
+    "sharp": "^0.35.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/jsdom": "^28.0.3",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@11.24.0"
+}
