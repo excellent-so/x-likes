@@ -33,13 +33,72 @@ export function embedProvider(): string {
 const PRICE_IN = Number(process.env.XLIKES_PRICE_IN ?? 1) / 1_000_000;
 const PRICE_OUT = Number(process.env.XLIKES_PRICE_OUT ?? 5) / 1_000_000;
 
-const IMG_MIME: Record<string, string> = {
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".png": "image/png",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-};
+// Claude reads JPEG, PNG, GIF and WebP up to 5 MB once base64-encoded, so about 3.75 MB of file.
+const MAX_IMAGE_BYTES = Math.floor((5 * 1024 * 1024 * 3) / 4);
+const MAX_IMAGE_EDGE = 1568; // Claude scales anything larger down to this anyway
+
+/**
+ * A problem with the Claude setup (the key, the model, the credit balance) rather than with one like. The stages
+ * stop at the first one, leave every unread like pending, and the CLI prints this message, which says what to fix.
+ */
+export class AiSetupError extends Error {}
+
+/** Throw an AiSetupError when XLIKES_AI_PROVIDER or XLIKES_EMBED_PROVIDER isn't one x-likes knows. */
+export function checkProviders(): void {
+  if (AI_PROVIDER !== "anthropic" && AI_PROVIDER !== "mock")
+    throw new AiSetupError(`XLIKES_AI_PROVIDER must be "anthropic" or "mock", not "${AI_PROVIDER}".`);
+  if (EMBED_PROVIDER !== "local" && EMBED_PROVIDER !== "mock")
+    throw new AiSetupError(`XLIKES_EMBED_PROVIDER must be "local" or "mock", not "${EMBED_PROVIDER}".`);
+}
+
+/** Turn an error from the Anthropic SDK into an AiSetupError when it is about the setup, not the request. */
+function setupProblem(e: unknown): AiSetupError | null {
+  const err = e as { status?: number; message?: string } | null;
+  const status = err?.status;
+  const msg = String(err?.message ?? e);
+  if (status === 401)
+    return new AiSetupError("Claude rejected the API key (401). Check ANTHROPIC_API_KEY, in your shell or in .env.");
+  if (status === 403)
+    return new AiSetupError("The API key isn't allowed to use this model (403). Check the key in the Anthropic Console.");
+  if (status === 404)
+    return new AiSetupError(`Claude can't find the model "${AI_MODEL}" for this key (404). Check XLIKES_AI_MODEL.`);
+  if (status === 402 || (status === 400 && /credit balance/i.test(msg)))
+    return new AiSetupError(`Anthropic refused for billing (${status}): check your plan and credit in the Anthropic Console.`);
+  if (status === undefined && /authentication method|api.?key/i.test(msg))
+    return new AiSetupError("XLIKES_AI_PROVIDER is anthropic, but ANTHROPIC_API_KEY is not set.");
+  return null;
+}
+
+/** The file's real image type, from its first bytes (a saved file's extension can be wrong). */
+function sniffMime(b: Buffer): string | null {
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b.length > 8 && b.readUInt32BE(0) === 0x89504e47) return "image/png";
+  if (b.length > 6 && b.toString("ascii", 0, 4) === "GIF8") return "image/gif";
+  if (b.length > 12 && b.toString("ascii", 0, 4) === "RIFF" && b.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
+/**
+ * The image as Claude accepts it. A JPEG, PNG, GIF or WebP small enough goes as it is. Anything else (the demo's
+ * SVG placeholders, AVIF, a file too large) is converted with sharp to a PNG at most 1568 px on its long edge, or
+ * to a JPEG if the PNG is still too large.
+ */
+export async function imageForClaude(path: string): Promise<{ mime: string; data: Buffer }> {
+  const buf = readFileSync(path);
+  const mime = sniffMime(buf);
+  if (mime && buf.length <= MAX_IMAGE_BYTES) return { mime, data: buf };
+  const { default: sharp } = await import("sharp");
+  const resized = () =>
+    sharp(buf, { animated: false }).resize({
+      width: MAX_IMAGE_EDGE,
+      height: MAX_IMAGE_EDGE,
+      fit: "inside",
+      withoutEnlargement: true,
+    });
+  const png = await resized().png().toBuffer();
+  if (png.length <= MAX_IMAGE_BYTES) return { mime: "image/png", data: png };
+  return { mime: "image/jpeg", data: await resized().jpeg({ quality: 85 }).toBuffer() };
+}
 
 // ── shared types ──────────────────────────────────────────────────────────────
 export interface VisionResult {
@@ -74,6 +133,15 @@ async function anthropic(): Promise<any> {
   return _anthropic;
 }
 
+/** One Messages API call, with setup problems (key, model, credit) raised as an AiSetupError. */
+async function ask(params: Record<string, unknown>): Promise<any> {
+  try {
+    return await (await anthropic()).messages.create(params);
+  } catch (e) {
+    throw setupProblem(e) ?? e;
+  }
+}
+
 function textFrom(msg: any): string {
   const block = (msg?.content ?? []).find((b: any) => b.type === "text");
   return block?.text ?? "";
@@ -95,27 +163,25 @@ function parseJson<T>(s: string, fallback: T): T {
 
 // ── describeImage ─────────────────────────────────────────────────────────────
 export async function describeImage(imagePath: string, ctx: ImageContext = {}): Promise<VisionResult> {
+  checkProviders();
   if (AI_PROVIDER === "anthropic") return describeImageAnthropic(imagePath, ctx);
   return describeImageMock(imagePath, ctx);
 }
 
 async function describeImageAnthropic(imagePath: string, ctx: ImageContext): Promise<VisionResult> {
-  const mime = IMG_MIME[extname(imagePath).toLowerCase()];
-  if (!mime) return { caption: null, ocr_text: null, labels: null, model: "skip", cost: 0 }; // e.g. svg
-  const data = readFileSync(imagePath).toString("base64");
-  const client = await anthropic();
+  const { mime, data } = await imageForClaude(imagePath);
   const prompt =
     `Describe this image from a saved tweet.` +
     (ctx.tweetText ? ` Tweet text: "${ctx.tweetText}".` : "") +
     ` Reply with ONLY JSON: {"caption": "one or two sentences", "ocr_text": "ALL text visible in the image, verbatim, or empty string", "labels": ["3-6", "topic", "words"]}.`;
-  const msg = await client.messages.create({
+  const msg = await ask({
     model: AI_MODEL,
     max_tokens: 1024,
     messages: [
       {
         role: "user",
         content: [
-          { type: "image", source: { type: "base64", media_type: mime, data } },
+          { type: "image", source: { type: "base64", media_type: mime, data: data.toString("base64") } },
           { type: "text", text: prompt },
         ],
       },
@@ -165,20 +231,20 @@ function describeImageMock(imagePath: string, ctx: ImageContext): VisionResult {
 
 // ── generateTags ──────────────────────────────────────────────────────────────
 export async function generateTags(doc: string): Promise<TagResult> {
+  checkProviders();
   if (!doc.trim()) return { topics: [], entities: [], model: "empty", cost: 0 };
   if (AI_PROVIDER === "anthropic") return generateTagsAnthropic(doc);
   return generateTagsMock(doc);
 }
 
 async function generateTagsAnthropic(doc: string): Promise<TagResult> {
-  const client = await anthropic();
   const prompt =
     `You tag saved bookmarks for a personal knowledge base. From the text below, extract:\n` +
     `- 3 to 7 lowercase topical tags (short noun phrases, reusable across bookmarks)\n` +
     `- named entities: people, orgs, products, github repos, papers.\n` +
     `Reply with ONLY JSON: {"topics":["..."],"entities":[{"name":"...","kind":"person|org|product|repo|paper"}]}\n\n` +
     `TEXT:\n${doc.slice(0, 6000)}`;
-  const msg = await client.messages.create({
+  const msg = await ask({
     model: AI_MODEL,
     max_tokens: 1024,
     messages: [{ role: "user", content: prompt }],
@@ -246,6 +312,7 @@ export interface EmbedResult {
 }
 
 export async function embed(texts: string[]): Promise<EmbedResult> {
+  checkProviders();
   if (texts.length === 0) return { vectors: [], model: EMBED_PROVIDER, dim: EMBED_DIM };
   if (EMBED_PROVIDER === "mock") {
     return { vectors: texts.map(mockEmbed), model: "mock-embed", dim: EMBED_DIM };

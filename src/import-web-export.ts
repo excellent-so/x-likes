@@ -10,9 +10,12 @@
  *
  * The normalizer is deliberately tolerant: it accepts a top-level array or an
  * object wrapper, and each record in either flattened form or raw GraphQL
- * (`legacy` / `core.user_results…`) shape.
+ * (`legacy` / `core.user_results…`) shape. The exporter's own JSON is the
+ * flattened form (id, full_text, screen_name, name, profile_image_url, media
+ * with thumbnail/original), plus the raw GraphQL tweet under `metadata` when
+ * "Include all metadata" is on: only that carries the tweet's links.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { db } from "./db.js";
 import { persistTweet } from "./hydrate.js";
 import type { SynMedia, SynTweet } from "./syndication.js";
@@ -39,7 +42,13 @@ function mapMedia(arr: any): SynMedia[] {
     const kind: SynMedia["kind"] =
       m.type === "video" ? "video" : m.type === "animated_gif" ? "animated_gif" : "photo";
     // NOTE: never use m.url — in GraphQL that's the t.co link, not the image.
-    const remote = first<string>(m.media_url_https, m.media_url, m.src, m.original, m.thumbnail);
+    // For a video the exporter's `original` is the mp4 itself, so the poster comes from `thumbnail` (asked for at
+    // full size rather than the 150 px thumb).
+    const poster = typeof m.thumbnail === "string" ? m.thumbnail.replace(/([?&])name=thumb(&|$)/, "$1").replace(/[?&]$/, "") : undefined;
+    const remote =
+      kind === "photo"
+        ? first<string>(m.media_url_https, m.media_url, m.src, m.original, m.thumbnail)
+        : first<string>(m.media_url_https, m.media_url, m.src, poster);
     if (!remote) continue;
     let video_url: string | undefined;
     if (kind !== "photo") {
@@ -47,7 +56,7 @@ function mapMedia(arr: any): SynMedia[] {
       const mp4 = variants
         .filter((v) => v && v.url && (v.content_type === "video/mp4" || /\.mp4/.test(v.url)))
         .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0));
-      video_url = mp4[0]?.url ?? m.video_url;
+      video_url = mp4[0]?.url ?? m.video_url ?? (/\.mp4(\?|$)/.test(m.original ?? "") ? m.original : undefined);
     }
     out.push({
       kind,
@@ -83,21 +92,21 @@ interface Normalized {
 
 function normalize(item: any): Normalized | null {
   if (!item || typeof item !== "object") return null;
-  const L = item.legacy ?? item; // GraphQL nests content under `legacy`
-  const u =
-    item.core?.user_results?.result?.legacy ??
-    item.user?.legacy ??
-    item.user ??
-    item.author ??
-    {};
+  // twitter-web-exporter keeps the raw GraphQL tweet under `metadata` when "Include all metadata" is on.
+  const G = item.metadata && typeof item.metadata === "object" ? item.metadata : null;
+  const L = item.legacy ?? G?.legacy ?? item; // GraphQL nests content under `legacy`
+  const R = (item.core ?? G?.core)?.user_results?.result; // the author, in GraphQL
+  // X moved screen_name and name from `result.legacy` to `result.core`; read both.
+  const u = { ...(R?.legacy ?? item.user?.legacy ?? item.user ?? item.author ?? {}), ...(R?.core ?? {}) };
 
   const id = first<string>(item.rest_id, item.id_str, L.id_str, item.id, item.tweet_id, item.tweetId);
   if (!id) return null;
   const idStr = String(id);
   const text = first<string>(
     item.note_tweet?.note_tweet_results?.result?.text,
+    G?.note_tweet?.note_tweet_results?.result?.text,
+    item.full_text, // the exporter's full_text is already the whole long-form text
     L.full_text,
-    item.full_text,
     item.text,
     L.text
   ) ?? null;
@@ -113,7 +122,14 @@ function normalize(item: any): Normalized | null {
         tweet_id: idStr,
         author_name: name ?? null,
         author_handle: handle,
-        author_avatar_url: first<string>(u.profile_image_url_https, item.profile_image_url_https, item.avatar) ?? null,
+        author_avatar_url:
+          first<string>(
+            R?.avatar?.image_url,
+            u.profile_image_url_https,
+            item.profile_image_url_https,
+            item.profile_image_url,
+            item.avatar
+          ) ?? null,
         text,
         created_at: toIso(first(L.created_at, item.created_at)),
         lang: first<string>(L.lang, item.lang) ?? null,
@@ -148,11 +164,17 @@ export async function importWebExport(
   path: string,
   opts: { concurrency?: number; onProgress?: (d: number, t: number) => void } = {}
 ): Promise<WebExportReport> {
-  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  if (!existsSync(path)) throw new Error(`File not found: ${path}`);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf8"));
+  } catch (e) {
+    throw new Error(`${path} isn't valid JSON (${(e as Error).message}). Export your likes from twitter-web-exporter as JSON.`);
+  }
   const items: any[] = Array.isArray(parsed)
     ? parsed
     : parsed.data ?? parsed.tweets ?? parsed.likes ?? parsed.results ?? parsed.records ?? [];
-  if (!Array.isArray(items)) throw new Error("Could not find an array of tweets in the export file.");
+  if (!Array.isArray(items)) throw new Error(`Could not find a list of tweets in ${path}. Is it a twitter-web-exporter JSON export?`);
 
   const d = db();
   const insertLike = d.prepare(

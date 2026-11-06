@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { describeImage } from "./ai.js";
+import { AiSetupError, describeImage } from "./ai.js";
 import { db, MEDIA_DIR } from "./db.js";
-import { markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
+import { eachWithWorkers, markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
 
 export interface VisionReport {
   attempted: number;
@@ -68,6 +68,7 @@ async function processTweet(tweetId: string): Promise<{ status: "ok" | "skip" | 
       });
       done++;
     } catch (e) {
+      if (e instanceof AiSetupError) throw e; // not this like's fault: stop, and leave it pending
       lastErr = (e as Error).message;
     }
   }
@@ -91,21 +92,14 @@ export async function enrichVision(
     opts
   );
   const report: VisionReport = { attempted: ids.length, ok: 0, skip: 0, error: 0, images: 0, cost: 0 };
-  let cursor = 0;
   let done = 0;
-  const concurrency = Math.max(1, opts.concurrency ?? 3);
-
-  async function worker() {
-    while (cursor < ids.length) {
-      const id = ids[cursor++]!;
-      const r = await processTweet(id);
-      report[r.status]++;
-      report.images += r.images;
-      report.cost += r.cost;
-      done++;
-      opts.onProgress?.(done, ids.length);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+  await eachWithWorkers(ids, opts.concurrency ?? 3, async (id) => {
+    const r = await processTweet(id);
+    report[r.status]++;
+    report.images += r.images;
+    report.cost += r.cost;
+    done++;
+    opts.onProgress?.(done, ids.length);
+  });
   return report;
 }

@@ -1,4 +1,4 @@
-import { embed, packVec } from "./ai.js";
+import { AiSetupError, embed, packVec } from "./ai.js";
 import { db } from "./db.js";
 import { buildDoc, markStage, selectPending, type PendingOpts } from "./enrichment.js";
 
@@ -51,6 +51,7 @@ export async function enrichEmbeddings(
         tx();
         report.ok += embeddable.length;
       } catch (e) {
+        if (e instanceof AiSetupError) throw e;
         for (const x of embeddable) markStage(d, x.id, "embed", { status: "error", error: (e as Error).message });
         report.error += embeddable.length;
       }

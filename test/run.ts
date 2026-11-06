@@ -10,8 +10,10 @@
  * suite never touches your real data dir.
  */
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import { networkInterfaces, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const DIR = join(ROOT, `.test-data-${process.pid}`);
 const ARCHIVE = join(ROOT, `.test-archive-${process.pid}`);
+const DIR2 = join(ROOT, `.test-data-${process.pid}-claude`); // a second store, for the Claude provider tests
 
 process.env.XLIKES_DATA_DIR = DIR;
 process.env.XLIKES_AI_PROVIDER = "mock";
@@ -26,6 +29,7 @@ process.env.XLIKES_EMBED_PROVIDER = "local";
 
 rmSync(DIR, { recursive: true, force: true });
 rmSync(ARCHIVE, { recursive: true, force: true });
+rmSync(DIR2, { recursive: true, force: true });
 mkdirSync(DIR, { recursive: true });
 
 // ── tiny harness ──────────────────────────────────────────────────────────────
@@ -63,6 +67,7 @@ const { enrichEmbeddings } = await import("../src/enrich-embed.js");
 const search = await import("../src/search.js");
 const { unpackVec } = await import("../src/ai.js");
 const { xConfigured } = await import("../src/config.js");
+const { visionHtml } = await import("../web/vision.js");
 
 const NODE = process.execPath;
 const TSX = join(ROOT, "node_modules/tsx/dist/cli.mjs");
@@ -99,7 +104,39 @@ await test("re-import is idempotent (0 new)", () => {
   assert.equal(r.inserted, 0);
 });
 await test("bad path throws", () => {
-  assert.throws(() => importArchive(join(ARCHIVE, "does-not-exist")));
+  assert.throws(() => importArchive(join(ARCHIVE, "does-not-exist")), /Path not found/);
+});
+const haveZip = (() => {
+  try {
+    execFileSync("zip", ["-v"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+await test("a .zip archive is read in place, leaving nothing in the temp folder", () => {
+  if (!haveZip) return console.log("      (no zip command here: skipped)");
+  const zip = join(ROOT, `.test-archive-${process.pid}.zip`);
+  try {
+    execFileSync("zip", ["-qr", zip, "data"], { cwd: ARCHIVE });
+    const before = readdirSync(tmpdir()).filter((n) => n.startsWith("x-likes-")).length;
+    const r = importArchive(zip);
+    assert.equal(r.parsed, 14);
+    assert.equal(r.inserted, 0); // already imported above
+    assert.equal(readdirSync(tmpdir()).filter((n) => n.startsWith("x-likes-")).length, before);
+  } finally {
+    rmSync(zip, { force: true });
+  }
+});
+await test("a file that isn't a zip gets a plain message", () => {
+  if (!haveZip) return console.log("      (no zip command here: skipped)");
+  const fake = join(ROOT, `.test-archive-${process.pid}-fake.zip`);
+  try {
+    writeFileSync(fake, "not a zip");
+    assert.throws(() => importArchive(fake), /Couldn't read .* as a zip/);
+  } finally {
+    rmSync(fake, { force: true });
+  }
 });
 
 // ── 3. hydrate (mock source) ──────────────────────────────────────────────────
@@ -164,6 +201,25 @@ await test("re-enrich is idempotent (nothing re-attempted)", async () => {
   assert.equal(v.attempted, 0);
   assert.equal(t.attempted, 0);
   assert.equal(e.attempted, 0);
+});
+await test("a dead article link (404) counts as gone, not failed, and isn't retried", async () => {
+  const site = await stubServer((req, res) => res.writeHead(404).end("not here"));
+  const id = "1700000000000000001";
+  const d = db();
+  try {
+    d.prepare(`INSERT INTO likes (tweet_id, archive_text, liked_order) VALUES (?, 'a dead link', 99)`).run(id);
+    d.prepare(`INSERT INTO hydration_state (tweet_id, status) VALUES (?, 'ok')`).run(id);
+    d.prepare(`INSERT INTO links (tweet_id, url) VALUES (?, ?)`).run(id, `${site.url}/gone`);
+    const r = await enrichArticles({});
+    assert.equal(r.gone, 1);
+    assert.equal(r.error, 0);
+    const st = d.prepare(`SELECT status FROM enrichment_state WHERE tweet_id = ? AND stage = 'article'`).get(id) as { status: string };
+    assert.equal(st.status, "gone");
+    assert.equal((await enrichArticles({ retryErrors: true })).attempted, 0);
+  } finally {
+    d.prepare(`DELETE FROM likes WHERE tweet_id = ?`).run(id);
+    site.server.close();
+  }
 });
 
 // ── 5. search ─────────────────────────────────────────────────────────────────
@@ -253,12 +309,27 @@ await test("stats are coherent", () => {
 
 // ── 6. web-export ingest ──────────────────────────────────────────────────────
 group("Web-export ingest (open-source path)");
-await test("import flattened + graphql + bare shapes", async () => {
+await test("import flattened + graphql + bare + the exporter's own shapes", async () => {
   const r = await importWebExport(join(ROOT, "fixtures/web-export-sample.json"));
-  assert.equal(r.records, 3);
-  assert.equal(r.inserted, 3);
-  assert.equal(r.hydrated, 2);
+  assert.equal(r.records, 5);
+  assert.equal(r.inserted, 5);
+  assert.equal(r.hydrated, 4);
   assert.equal(r.pending, 1);
+});
+await test("exporter JSON: avatar from profile_image_url, a video's poster and mp4", () => {
+  const d = db();
+  const t = d.prepare(`SELECT author_handle, author_avatar_url, created_at FROM tweets WHERE tweet_id='1600000000000000004'`).get() as any;
+  assert.equal(t.author_handle, "launch_desk");
+  assert.equal(t.author_avatar_url, "https://pbs.twimg.com/profile_images/2/launch_desk_normal.jpg");
+  assert.match(t.created_at, /^2024-05-14T10:20:30/);
+  const m = d.prepare(`SELECT kind, remote_url, video_url FROM media WHERE tweet_id='1600000000000000004'`).get() as any;
+  assert.equal(m.kind, "video");
+  assert.equal(m.remote_url, "https://pbs.twimg.com/ext_tw_video_thumb/1600000000000000004/pu/img/poster.jpg");
+  assert.match(m.video_url, /clip\.mp4/);
+});
+await test("exporter JSON with metadata: the tweet's links come through", () => {
+  const links = db().prepare(`SELECT url FROM links WHERE tweet_id='1600000000000000005'`).all() as { url: string }[];
+  assert.deepEqual(links.map((l) => l.url), ["https://ocr.example/blog/on-device-receipts"]);
 });
 await test("graphql date normalized to ISO", () => {
   const t = db().prepare(`SELECT created_at FROM tweets WHERE tweet_id='1600000000000000002'`).get() as { created_at: string };
@@ -293,15 +364,184 @@ await test("endpoints, media, 404, traversal guard, cache header", async () => {
   assert.equal(r.notFound, 404);
   assert.ok(r.traversal === 404 || r.traversal === 400, `traversal returned ${r.traversal}`);
   assert.equal(r.cssCache, "no-cache");
+  assert.equal(r.visionJs, 200);
+  assert.ok(r.likeOcr, "/api/like carries the image text");
+});
+await test("it answers only on this machine: loopback only, and local Host names only", async () => {
+  const r = await httpSession(4398);
+  assert.equal(r.foreignHost, 403);
+  if (r.lan === null) return console.log("      (no network interface besides loopback: skipped the LAN check)");
+  assert.equal(r.lan, "refused", `the LAN address ${r.lan}`);
 });
 
-// ── 9. config / .env ──────────────────────────────────────────────────────────
+// ── 9. the web app's detail view: what the image reading found ──────────────────
+group("Web app detail: image text and caption");
+await test("a like with a screenshot shows its text in the image and its caption", () => {
+  const full = JSON.parse(JSON.stringify(search.getLikeFull("1500000000000000002")));
+  const html: string = visionHtml(full);
+  assert.match(html, /<dt>Text in the image<\/dt>/);
+  assert.match(html, /CREATE VIRTUAL TABLE docs USING fts5/);
+  assert.match(html, /<dt>Caption<\/dt>/);
+  assert.match(html, /Terminal showing an FTS5 query/);
+});
+await test("image text is escaped, and a tweet with several images numbers them", () => {
+  const html: string = visionHtml({
+    media: [{ remote_url: "a" }, { remote_url: "b" }],
+    vision: [
+      { remote_url: "b", ocr_text: "<script>alert(1)</script>", caption: null },
+      { remote_url: "a", ocr_text: "", caption: "A chart" },
+    ],
+  });
+  assert.ok(!html.includes("<script>"));
+  assert.match(html, /&lt;script&gt;/);
+  assert.ok(html.indexOf("Image 1") < html.indexOf("Image 2"));
+  assert.ok(html.indexOf("A chart") < html.indexOf("&lt;script&gt;"));
+});
+await test("nothing read, nothing shown", () => {
+  assert.equal(visionHtml({ media: [{ remote_url: "a" }], vision: [{ remote_url: "a", ocr_text: null, caption: " " }] }), "");
+  assert.equal(visionHtml({ media: [], vision: [] }), "");
+});
+
+// ── 10. the CLI's unhappy paths ───────────────────────────────────────────────
+group("CLI: wrong input gets one plain sentence");
+await test("an unknown command", async () => {
+  const r = await cli(["enrich:everything"]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /Unknown command "enrich:everything"/);
+  assert.doesNotMatch(r.err, /\n\s+at /);
+});
+await test("--limit that isn't a number", async () => {
+  const r = await cli(["enrich:tags", "--limit", "ten"]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /--limit must be a whole number from 1 up, not "ten"/);
+  assert.doesNotMatch(r.err, /\n\s+at /);
+});
+await test("an archive path that doesn't exist", async () => {
+  const r = await cli(["import", "./no-such-archive.zip"]);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /Path not found: \.\/no-such-archive\.zip/);
+  assert.doesNotMatch(r.err, /\n\s+at /);
+});
+await test("serve on a port that's in use", async () => {
+  const busy = await stubServer((req, res) => res.end("busy"));
+  try {
+    const r = await cli(["serve", "--port", String(busy.port)]);
+    assert.equal(r.code, 1);
+    assert.match(r.err, new RegExp(`Port ${busy.port} is already in use`));
+  } finally {
+    busy.server.close();
+  }
+});
+
+// ── 11. Claude for images and tags, against a local stand-in for the API ────────
+group("Claude provider (a local stand-in for the API)");
+const seen: { mediaType?: string }[] = [];
+let apiMode: "reject-key" | "ok" = "reject-key";
+const api = await stubServer((req, res) => {
+  let body = "";
+  req.on("data", (c) => (body += c));
+  req.on("end", () => {
+    const j = JSON.parse(body || "{}");
+    const img = j.messages?.[0]?.content?.find?.((c: any) => c.type === "image");
+    seen.push({ mediaType: img?.source?.media_type });
+    res.setHeader("Content-Type", "application/json");
+    if (apiMode === "reject-key") {
+      res.writeHead(401).end(JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }));
+      return;
+    }
+    const text = img
+      ? JSON.stringify({ caption: "A terminal with code", ocr_text: "STAND-IN OCR TEXT", labels: ["code"] })
+      : JSON.stringify({ topics: ["stand-in topic"], entities: [] });
+    res.writeHead(200).end(
+      JSON.stringify({
+        id: "msg_test",
+        type: "message",
+        role: "assistant",
+        model: "claude-haiku-4-5-20251001",
+        content: [{ type: "text", text }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1000, output_tokens: 50 },
+      })
+    );
+  });
+});
+const claudeEnv = {
+  XLIKES_DATA_DIR: DIR2,
+  XLIKES_AI_PROVIDER: "anthropic",
+  ANTHROPIC_API_KEY: "sk-ant-invalid",
+  ANTHROPIC_BASE_URL: api.url,
+};
+await test("setup: a second store with the demo likes, hydrated", async () => {
+  assert.equal((await cli(["import", ARCHIVE], claudeEnv)).code, 0);
+  assert.equal((await cli(["hydrate"], claudeEnv)).code, 0);
+});
+await test("a rejected key stops the stage with one sentence and leaves every like pending", async () => {
+  const r = await cli(["enrich:images"], claudeEnv);
+  assert.equal(r.code, 1);
+  assert.match(r.err, /Claude rejected the API key \(401\)\. Check ANTHROPIC_API_KEY/);
+  assert.match(r.err, /still pending/);
+  assert.doesNotMatch(r.err, /\n\s+at /);
+  assert.ok(seen.length >= 1 && seen.length <= 3, `${seen.length} requests (it should stop at the first)`);
+  const n = await countStage(DIR2, "vision");
+  assert.equal(n, 0, `${n} likes marked for the image stage`);
+  const t = await cli(["enrich:tags"], claudeEnv);
+  assert.equal(t.code, 1);
+  assert.equal(await countStage(DIR2, "tags"), 0);
+});
+await test("with a working key the same likes are read: SVG placeholders go as PNG", async () => {
+  apiMode = "ok";
+  seen.length = 0;
+  const r = await cli(["enrich:images"], claudeEnv);
+  assert.equal(r.code, 0, r.err);
+  assert.match(r.out, /7 ok · 0 failed · 7 images analyzed/);
+  assert.ok(seen.length === 7 && seen.every((s) => s.mediaType === "image/png"), JSON.stringify(seen));
+  assert.equal(await countStage(DIR2, "vision", "ok"), 7);
+});
+api.server.close();
+
+// ── 12. config / .env ─────────────────────────────────────────────────────────
 group("Config");
 await test(".env loads (X creds present or absent, no throw)", () => {
   assert.equal(typeof xConfigured(), "boolean");
 });
 
 // ── helpers: subprocess sessions ──────────────────────────────────────────────
+/** A throwaway HTTP server on a free loopback port. */
+async function stubServer(handler: (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void) {
+  const server: Server = createServer(handler);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const port = (server.address() as { port: number }).port;
+  return { server, port, url: `http://127.0.0.1:${port}` };
+}
+
+/** Run the CLI as a user would, and collect its output and exit code. */
+function cli(args: string[], env: Record<string, string> = {}): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((resolveRun) => {
+    const proc = spawn(NODE, [TSX, join(ROOT, "src/cli.ts"), ...args], { cwd: ROOT, env: { ...process.env, ...env } });
+    let out = "";
+    let err = "";
+    proc.stdout.on("data", (d) => (out += d));
+    proc.stderr.on("data", (d) => (err += d));
+    const timer = setTimeout(() => proc.kill(), 60000);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      resolveRun({ code, out, err });
+    });
+  });
+}
+
+/** How many likes have a row (optionally with this status) for a stage, in another store. */
+async function countStage(dir: string, stage: string, status?: string): Promise<number> {
+  const { default: Database } = await import("better-sqlite3");
+  const d = new Database(join(dir, "likes.db"), { readonly: true });
+  try {
+    const sql = `SELECT COUNT(*) n FROM enrichment_state WHERE stage = ?${status ? " AND status = ?" : ""}`;
+    return (d.prepare(sql).get(...(status ? [stage, status] : [stage])) as { n: number }).n;
+  } finally {
+    d.close();
+  }
+}
+
 async function mcpSession(): Promise<{ tools: string[]; searchHits: number; getOk: boolean; tagsOk: boolean; dirtyStdout: number }> {
   const proc = spawn(NODE, [TSX, join(ROOT, "src/mcp-server.ts")], {
     cwd: ROOT,
@@ -379,7 +619,27 @@ async function httpSession(port: number) {
     const notFound = (await fetch(base + "/nope-nope")).status;
     const traversal = (await fetch(base + "/media/..%2f..%2fpackage.json")).status;
     const cssCache = (await fetch(base + "/styles.css")).headers.get("cache-control");
-    return { index, stats, searchTotal, tags, mediaOk, notFound, traversal, cssCache };
+    const visionJs = (await fetch(base + "/vision.js")).status;
+    const like = await (await fetch(base + "/api/like?id=1500000000000000002")).json();
+    const likeOcr = like.vision?.some((v: any) => /CREATE VIRTUAL TABLE/.test(v.ocr_text ?? ""));
+    // A page on another site that rebinds its name to 127.0.0.1 sends its own Host header.
+    const foreignHost = await new Promise<number>((done) => {
+      import("node:http").then(({ request }) =>
+        request({ host: "127.0.0.1", port, path: "/api/stats", headers: { Host: `evil.example:${port}` } }, (res) => {
+          res.resume();
+          done(res.statusCode ?? 0);
+        }).end()
+      );
+    });
+    // What another machine on the network would see: this machine's LAN address must refuse the connection.
+    const ip = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)?.address;
+    const lan = ip
+      ? await fetch(`http://${ip}:${port}/api/stats`, { signal: AbortSignal.timeout(3000) }).then(
+          (r) => `answered ${r.status}`,
+          () => "refused"
+        )
+      : null;
+    return { index, stats, searchTotal, tags, mediaOk, notFound, traversal, cssCache, visionJs, likeOcr, foreignHost, lan };
   } finally {
     proc.kill();
   }
@@ -394,4 +654,5 @@ if (failures.length) {
 }
 rmSync(DIR, { recursive: true, force: true });
 rmSync(ARCHIVE, { recursive: true, force: true });
+rmSync(DIR2, { recursive: true, force: true });
 process.exit(fail > 0 ? 1 : 0);

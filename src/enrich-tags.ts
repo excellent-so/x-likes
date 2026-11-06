@@ -1,6 +1,6 @@
-import { generateTags } from "./ai.js";
+import { AiSetupError, generateTags } from "./ai.js";
 import { db } from "./db.js";
-import { attachTag, buildDoc, markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
+import { attachTag, buildDoc, eachWithWorkers, markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
 
 export interface TagReport {
   attempted: number;
@@ -31,6 +31,7 @@ async function processTweet(tweetId: string): Promise<{ status: "ok" | "skip" | 
     reindexAll(tweetId);
     return { status: "ok", cost: r.cost };
   } catch (e) {
+    if (e instanceof AiSetupError) throw e; // not this like's fault: stop, and leave it pending
     markStage(d, tweetId, "tags", { status: "error", error: (e as Error).message });
     return { status: "error", cost: 0 };
   }
@@ -41,21 +42,14 @@ export async function enrichTags(
 ): Promise<TagReport> {
   const ids = selectPending("tags", ``, `1`, opts);
   const report: TagReport = { attempted: ids.length, ok: 0, skip: 0, error: 0, cost: 0, distinctTags: 0 };
-  let cursor = 0;
   let done = 0;
-  const concurrency = Math.max(1, opts.concurrency ?? 3);
-
-  async function worker() {
-    while (cursor < ids.length) {
-      const id = ids[cursor++]!;
-      const r = await processTweet(id);
-      report[r.status]++;
-      report.cost += r.cost;
-      done++;
-      opts.onProgress?.(done, ids.length);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+  await eachWithWorkers(ids, opts.concurrency ?? 3, async (id) => {
+    const r = await processTweet(id);
+    report[r.status]++;
+    report.cost += r.cost;
+    done++;
+    opts.onProgress?.(done, ids.length);
+  });
   report.distinctTags = (db().prepare(`SELECT COUNT(*) n FROM tags`).get() as { n: number }).n;
   return report;
 }

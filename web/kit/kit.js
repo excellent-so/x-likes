@@ -5,7 +5,8 @@
 //           it before the first paint.
 //   Copy    a [data-ex-copy] button copies its value (or the text of the element its value names, "#id"),
 //           shows "Copied" in the kit's amber for 1.6 s, then goes back.
-//   Nav     a [data-ex-nav-toggle] button opens and closes the shell's sidebar on a phone.
+//   Nav     a [data-ex-nav-toggle] button opens the shell's sidebar on a phone. A tap on the scrim, Escape,
+//           or a link in the sidebar closes it again (the open sidebar covers the button).
 //   Sort    a table with [data-ex-sort] sorts by a header click (numbers as numbers).
 (function () {
   var root = document.documentElement;
@@ -29,19 +30,25 @@
     return Promise.resolve();
   }
 
+  function setNav(shell, open) {
+    shell.toggleAttribute('data-nav-open', open);
+    document.querySelectorAll('[data-ex-nav-toggle]').forEach(function (b) { b.setAttribute('aria-expanded', String(open)); });
+  }
+
   document.addEventListener('click', function (e) {
     var t = e.target instanceof Element ? e.target : null;
     if (!t) return;
+    var openShell = t.closest('.ex-shell[data-nav-open]');
+    if (openShell) {
+      if (t === openShell) { setNav(openShell, false); return; } // the scrim is the shell's ::after
+      if (t.closest('.ex-sidebar a[href]')) setNav(openShell, false); // a choice was made; the link still works
+    }
     var toggle = t.closest('[data-ex-theme-toggle]');
     if (toggle) { setTheme(theme() === 'dark' ? 'light' : 'dark'); return; }
     var nav = t.closest('[data-ex-nav-toggle]');
     if (nav) {
       var shell = nav.closest('.ex-shell') || document.querySelector('.ex-shell');
-      if (shell) {
-        var open = !shell.hasAttribute('data-nav-open');
-        shell.toggleAttribute('data-nav-open', open);
-        nav.setAttribute('aria-expanded', String(open));
-      }
+      if (shell) setNav(shell, !shell.hasAttribute('data-nav-open'));
       return;
     }
     var c = t.closest('[data-ex-copy]');
@@ -61,6 +68,15 @@
     }
     var th = t.closest('table[data-ex-sort] th');
     if (th) sortBy(th);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var shell = document.querySelector('.ex-shell[data-nav-open]');
+    if (!shell) return;
+    setNav(shell, false);
+    var b = document.querySelector('[data-ex-nav-toggle]');
+    if (b) b.focus();
   });
 
   function sortBy(th) {

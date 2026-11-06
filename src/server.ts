@@ -164,8 +164,26 @@ async function sendVideo(
   sendFileRange(req, res, cache, "video/mp4");
 }
 
-export function serve(port = Number(process.env.PORT) || 4321): void {
+// The app answers only on this machine: it listens on the loopback address, and it refuses requests whose Host
+// isn't a local name, so a web page you visit can't reach it through a DNS-rebinding trick.
+const HOST = "127.0.0.1";
+const LOCAL_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** The port to listen on: --port, else PORT, else 4321. */
+function portFrom(flag: number | undefined): number {
+  if (flag !== undefined) return flag;
+  const env = process.env.PORT;
+  if (env === undefined || env === "") return 4321;
+  const n = Number(env);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) throw new Error(`PORT must be a whole number from 1 to 65535, not "${env}".`);
+  return n;
+}
+
+export function serve(portFlag?: number): void {
+  const port = portFrom(portFlag);
   const server = createServer(async (req, res) => {
+    const host = (req.headers.host ?? "").toLowerCase().replace(/:\d+$/, "");
+    if (!LOCAL_NAMES.has(host)) return void res.writeHead(403, { "Content-Type": "text/plain" }).end("x-likes only answers on localhost");
     const url = new URL(req.url ?? "/", `http://localhost:${port}`);
     const path = decodeURIComponent(url.pathname);
 
@@ -240,8 +258,16 @@ export function serve(port = Number(process.env.PORT) || 4321): void {
     res.writeHead(404, { "Content-Type": "text/plain" }).end("not found");
   });
 
-  server.listen(port, () => {
-    // localhost (not 127.0.0.1) keeps things simple across browsers.
+  server.on("error", (e: NodeJS.ErrnoException) => {
+    console.error(
+      e.code === "EADDRINUSE"
+        ? `\n  Port ${port} is already in use. Stop whatever is using it, or pick another port: pnpm serve --port ${port === 65535 ? 4322 : port + 1}\n`
+        : `\n  Error: the web app couldn't start: ${e.message}\n`
+    );
+    process.exit(1);
+  });
+
+  server.listen(port, HOST, () => {
     console.log(`\n  x-likes → http://localhost:${port}\n`);
     console.log(`  data:  ${DB_PATH}`);
     console.log(`  media: ${MEDIA_DIR}\n`);

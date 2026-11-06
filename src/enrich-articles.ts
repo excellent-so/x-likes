@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { Readability } from "@mozilla/readability";
 import { JSDOM, VirtualConsole } from "jsdom";
 import { db } from "./db.js";
-import { markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
+import { eachWithWorkers, markStage, reindexAll, selectPending, type PendingOpts } from "./enrichment.js";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
@@ -89,11 +89,15 @@ export interface ArticleReport {
   attempted: number;
   ok: number;
   skip: number;
+  /** every link is dead (404 or 410): nothing to retry */
+  gone: number;
   error: number;
   articles: number;
 }
 
-async function processTweet(tweetId: string): Promise<"ok" | "skip" | "error"> {
+const DEAD = /^http (404|410)$/;
+
+async function processTweet(tweetId: string): Promise<"ok" | "skip" | "gone" | "error"> {
   const d = db();
   const links = (
     d.prepare(`SELECT url FROM links WHERE tweet_id = ?`).all(tweetId) as { url: string }[]
@@ -107,6 +111,7 @@ async function processTweet(tweetId: string): Promise<"ok" | "skip" | "error"> {
   }
 
   let got = 0;
+  let dead = 0;
   let lastErr = "";
   const ins = d.prepare(
     `INSERT INTO article_extracts
@@ -143,6 +148,7 @@ async function processTweet(tweetId: string): Promise<"ok" | "skip" | "error"> {
       got++;
     } catch (e) {
       lastErr = (e as Error).message;
+      if (DEAD.test(lastErr)) dead++;
     }
   }
 
@@ -150,6 +156,10 @@ async function processTweet(tweetId: string): Promise<"ok" | "skip" | "error"> {
     markStage(d, tweetId, "article", { status: "ok" });
     reindexAll(tweetId);
     return "ok";
+  }
+  if (dead === links.length) {
+    markStage(d, tweetId, "article", { status: "gone", error: lastErr });
+    return "gone";
   }
   markStage(d, tweetId, "article", { status: "error", error: lastErr || "fetch failed" });
   return "error";
@@ -164,21 +174,13 @@ export async function enrichArticles(
     `1`,
     opts
   );
-  const report: ArticleReport = { attempted: ids.length, ok: 0, skip: 0, error: 0, articles: 0 };
-  let cursor = 0;
+  const report: ArticleReport = { attempted: ids.length, ok: 0, skip: 0, gone: 0, error: 0, articles: 0 };
   let done = 0;
-  const concurrency = Math.max(1, opts.concurrency ?? 4);
-
-  async function worker() {
-    while (cursor < ids.length) {
-      const id = ids[cursor++]!;
-      const r = await processTweet(id);
-      report[r]++;
-      done++;
-      opts.onProgress?.(done, ids.length);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, worker));
+  await eachWithWorkers(ids, opts.concurrency ?? 4, async (id) => {
+    report[await processTweet(id)]++;
+    done++;
+    opts.onProgress?.(done, ids.length);
+  });
   report.articles = (db().prepare(`SELECT COUNT(*) n FROM article_extracts`).get() as { n: number }).n;
   return report;
 }

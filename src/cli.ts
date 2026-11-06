@@ -1,9 +1,10 @@
 import "./env.js"; // first: later imports read .env settings when they load
-import { aiProvider, embedProvider } from "./ai.js";
+import { AiSetupError, aiProvider, checkProviders, embedProvider } from "./ai.js";
 import { enrichArticles } from "./enrich-articles.js";
 import { enrichEmbeddings } from "./enrich-embed.js";
 import { enrichTags } from "./enrich-tags.js";
 import { enrichVision } from "./enrich-vision.js";
+import { stageErrors, type Stage } from "./enrichment.js";
 import { hydratePending } from "./hydrate.js";
 import { importArchive } from "./import-archive.js";
 import { importWebExport } from "./import-web-export.js";
@@ -16,13 +17,33 @@ function fmt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+/** A mistake in how the command was typed: the CLI prints the message alone, with no stack trace. */
+class UsageError extends Error {}
+
 function flag(rest: string[], name: string): string | undefined {
   const i = rest.indexOf(name);
-  return i >= 0 ? rest[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const v = rest[i + 1];
+  if (v === undefined || v.startsWith("--")) throw new UsageError(`${name} needs a value, for example ${name} 10.`);
+  return v;
+}
+/** A whole number from min to max, or a UsageError that says so. */
+function intFlag(rest: string[], name: string, min: number, max = Number.MAX_SAFE_INTEGER): number | undefined {
+  const v = flag(rest, name);
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < min || n > max)
+    throw new UsageError(`${name} must be a whole number from ${min}${max < Number.MAX_SAFE_INTEGER ? ` to ${max}` : " up"}, not "${v}".`);
+  return n;
 }
 function limitOf(rest: string[]): number | undefined {
-  const v = flag(rest, "--limit");
-  return v ? Number(v) : undefined;
+  return intFlag(rest, "--limit", 1);
+}
+
+/** Under a stage that had failures, say why (the most common reasons). */
+function printWhy(stage: Stage, failed: number): void {
+  if (!failed) return;
+  for (const e of stageErrors(stage)) console.log(`             why: ${e.error.slice(0, 160)} (${fmt(e.n)})`);
 }
 
 function printStats(): void {
@@ -36,6 +57,7 @@ function printStats(): void {
   With links     : ${fmt(s.withLinks)}`);
   const tags = listTags(8);
   if (tags.length) console.log(`  Top tags       : ${tags.map((t) => `${t.label} (${t.count})`).join(", ")}`);
+  if (!s.likes) console.log(`\n  No likes yet. Import your X archive with pnpm ingest <archive.zip>, or try the demo in the README.`);
   console.log("");
 }
 
@@ -59,21 +81,30 @@ async function enrichAll(opts: EnrichOpts): Promise<void> {
   console.log(`\n  Enriching (vision/tags: ${aiProvider()}, embeddings: ${embedProvider()})\n`);
 
   const art = await enrichArticles({ ...opts, onProgress: (d, t) => progressBar(d, t, "articles") });
-  console.log(`  articles : ${fmt(art.ok)} ok · ${fmt(art.skip)} no-link · ${fmt(art.error)} failed → ${fmt(art.articles)} stored`);
+  console.log(`  articles : ${articleLine(art)} → ${fmt(art.articles)} stored`);
+  printWhy("article", art.error);
 
   const vis = await enrichVision({ ...opts, onProgress: (d, t) => progressBar(d, t, "images") });
   console.log(`  images   : ${fmt(vis.ok)} ok · ${fmt(vis.skip)} none · ${fmt(vis.error)} failed → ${fmt(vis.images)} analyzed  ($${vis.cost.toFixed(4)})`);
+  printWhy("vision", vis.error);
 
   const tag = await enrichTags({ ...opts, onProgress: (d, t) => progressBar(d, t, "tags") });
   console.log(`  tags     : ${fmt(tag.ok)} ok · ${fmt(tag.skip)} empty · ${fmt(tag.error)} failed → ${fmt(tag.distinctTags)} distinct  ($${tag.cost.toFixed(4)})`);
+  printWhy("tags", tag.error);
 
   const emb = await enrichEmbeddings({ ...opts, onProgress: (d, t) => progressBar(d, t, "embed") });
-  console.log(`  embed    : ${fmt(emb.ok)} ok · ${fmt(emb.skip)} empty · ${fmt(emb.error)} failed  (${emb.model})`);
+  console.log(`  embed    : ${fmt(emb.ok)} ok · ${fmt(emb.skip)} empty · ${fmt(emb.error)} failed${emb.model ? `  (${emb.model})` : ""}`);
+  printWhy("embed", emb.error);
+}
+
+function articleLine(r: { ok: number; skip: number; gone: number; error: number }): string {
+  return `${fmt(r.ok)} ok · ${fmt(r.skip)} no-link · ${fmt(r.gone)} dead link · ${fmt(r.error)} failed`;
 }
 
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   const opts: EnrichOpts = { limit: limitOf(rest), retryErrors: rest.includes("--retry-errors") };
+  if (cmd === "enrich" || cmd === "update" || cmd?.startsWith("enrich:")) checkProviders();
 
   switch (cmd) {
     case "import": {
@@ -115,22 +146,30 @@ async function main(): Promise<void> {
 
     case "enrich:articles": {
       const r = await enrichArticles({ ...opts, onProgress: (d, t) => progressBar(d, t, "articles") });
-      console.log(`\n  ${fmt(r.ok)} ok · ${fmt(r.skip)} no-link · ${fmt(r.error)} failed → ${fmt(r.articles)} article(s) stored.\n`);
+      console.log(`\n  ${articleLine(r)} → ${fmt(r.articles)} article(s) stored.`);
+      printWhy("article", r.error);
+      console.log("");
       break;
     }
     case "enrich:images": {
       const r = await enrichVision({ ...opts, onProgress: (d, t) => progressBar(d, t, "images") });
-      console.log(`\n  ${fmt(r.ok)} ok · ${fmt(r.images)} images analyzed · $${r.cost.toFixed(4)} (${aiProvider()}).\n`);
+      console.log(`\n  ${fmt(r.ok)} ok · ${fmt(r.error)} failed · ${fmt(r.images)} images analyzed · $${r.cost.toFixed(4)} (${aiProvider()}).`);
+      printWhy("vision", r.error);
+      console.log("");
       break;
     }
     case "enrich:tags": {
       const r = await enrichTags({ ...opts, onProgress: (d, t) => progressBar(d, t, "tags") });
-      console.log(`\n  ${fmt(r.ok)} ok · ${fmt(r.distinctTags)} distinct tags · $${r.cost.toFixed(4)} (${aiProvider()}).\n`);
+      console.log(`\n  ${fmt(r.ok)} ok · ${fmt(r.error)} failed · ${fmt(r.distinctTags)} distinct tags · $${r.cost.toFixed(4)} (${aiProvider()}).`);
+      printWhy("tags", r.error);
+      console.log("");
       break;
     }
     case "enrich:embed": {
       const r = await enrichEmbeddings({ ...opts, onProgress: (d, t) => progressBar(d, t, "embed") });
-      console.log(`\n  ${fmt(r.ok)} embedded · ${fmt(r.skip)} empty · ${fmt(r.error)} failed (${r.model}).\n`);
+      console.log(`\n  ${fmt(r.ok)} embedded · ${fmt(r.skip)} empty · ${fmt(r.error)} failed${r.model ? ` (${r.model})` : ""}.`);
+      printWhy("embed", r.error);
+      console.log("");
       break;
     }
     case "enrich": {
@@ -174,6 +213,7 @@ async function main(): Promise<void> {
       console.log(`  liked_tweets → HTTP ${r.status}  ${r.ok ? "✅" : "❌"}  ${r.reason}`);
       if (r.hint) console.log(`  → ${r.hint}`);
       console.log("");
+      if (!r.ok) process.exitCode = 1;
       break;
     }
 
@@ -193,12 +233,14 @@ async function main(): Promise<void> {
       break;
 
     case "serve": {
-      const p = flag(rest, "--port");
-      serve(p ? Number(p) : undefined);
+      serve(intFlag(rest, "--port", 1, 65535));
       break;
     }
 
-    default:
+    case undefined:
+    case "help":
+    case "--help":
+    case "-h":
       console.log(`
   x-likes — a searchable local second brain of your Twitter/X likes.
 
@@ -224,11 +266,23 @@ async function main(): Promise<void> {
 
   Try it with no real data:
     pnpm cli mock-archive ./mock-archive     Generate a realistic offline archive
+
+  Every enrichment command takes --limit N and --retry-errors.
 `);
+      break;
+
+    default:
+      throw new UsageError(`Unknown command "${cmd}". Run pnpm cli to see the commands.`);
   }
 }
 
 main().catch((e) => {
-  console.error("\n  Error:", e instanceof Error ? e.stack ?? e.message : e, "\n");
+  if (e instanceof AiSetupError) {
+    console.error(`\n\n  ${e.message}`);
+    console.error(`  Nothing was marked failed: the likes it hadn't read yet are still pending. Fix that, then run the same command again.\n`);
+  } else {
+    console.error(`\n\n  Error: ${e instanceof Error ? e.message : String(e)}\n`);
+    if (process.env.XLIKES_DEBUG && e instanceof Error) console.error(e.stack);
+  }
   process.exit(1);
 });

@@ -293,6 +293,15 @@ mark { padding: 0 1px; border-radius: 2px; background: var(--color-selection); c
 .d-article .asrc { margin-top: 4px; color: var(--color-subtle); font-size: var(--text-2xs); line-height: 1rem; font-variant-numeric: tabular-nums; }
 .d-tags { display: flex; flex-wrap: wrap; gap: 12px 6px; }
 
+/* What the image reading found (web/vision.js): small labels over plain text. */
+.d-vision { display: grid; gap: 8px; }
+.d-vision .dv-n { color: var(--color-strong); font-size: var(--text-2xs); font-weight: 600; line-height: 1rem; }
+.d-vision .dv { display: grid; gap: 4px; margin: 0; }
+.d-vision dt { color: var(--color-subtle); font-size: var(--text-2xs); font-weight: 500; line-height: 1rem; }
+.d-vision dd + dt { margin-top: 8px; }
+.d-vision dd { margin: 0; color: var(--color-body); font-size: var(--text-meta); line-height: 1.25rem; overflow-wrap: anywhere; }
+.d-vision .dv-ocr { white-space: pre-wrap; }
+
 .d-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-top: 16px; border-top: 1px solid var(--color-border); color: var(--color-subtle); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
 .d-foot .ex-link { min-height: var(--control-h); }
 .d-id { max-width: 100%; margin-left: auto; overflow: hidden; color: var(--color-subtle); font-family: var(--font-mono); font-weight: 400; text-overflow: ellipsis; }

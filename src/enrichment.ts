@@ -68,6 +68,38 @@ export function selectPending(
   return rows.map((r) => r.tweet_id);
 }
 
+/** The reasons a stage has failed, most common first: what the CLI prints under a stage with failures. */
+export function stageErrors(stage: Stage, limit = 2): { error: string; n: number }[] {
+  return db()
+    .prepare(
+      `SELECT COALESCE(last_error, 'unknown error') AS error, COUNT(*) AS n FROM enrichment_state
+       WHERE stage = ? AND status = 'error' GROUP BY 1 ORDER BY n DESC, error LIMIT ?`
+    )
+    .all(stage, limit) as { error: string; n: number }[];
+}
+
+/** Run `work` over ids on `concurrency` workers. The first error thrown stops them all and is rethrown. */
+export async function eachWithWorkers(
+  ids: string[],
+  concurrency: number,
+  work: (id: string) => Promise<void>
+): Promise<void> {
+  let cursor = 0;
+  let failure: { e: unknown } | null = null;
+  async function worker() {
+    while (cursor < ids.length && !failure) {
+      const id = ids[cursor++]!;
+      try {
+        await work(id);
+      } catch (e) {
+        failure ??= { e };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), ids.length) }, worker));
+  if (failure) throw (failure as { e: unknown }).e;
+}
+
 /**
  * The composite "document" for a like — tweet text + linked-article title/excerpt
  * + image OCR/caption — used as the input to tagging and embeddings.

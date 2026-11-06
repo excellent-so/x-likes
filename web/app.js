@@ -1,6 +1,8 @@
 // x-likes: the web client. Vanilla JS, no build step. The look is @excellent-so/kit (web/kit/); kit.js runs the
 // theme toggle and the copy button.
 
+import { visionHtml } from "/vision.js";
+
 const $ = (id) => document.getElementById(id);
 const grid = $("grid");
 const statusEl = $("status");
@@ -751,7 +753,7 @@ function renderDetail(t) {
     author +
     text +
     links +
-    `<div class="d-enrich"></div>` + // filled by fetchEnrichment (article + tags)
+    `<div class="d-enrich"></div>` + // filled by fetchEnrichment (article, tags, image text and captions)
     foot +
     `<div class="d-related" hidden></div>`;
 
@@ -781,6 +783,8 @@ async function fetchEnrichment(id) {
         .map((tg) => `<button type="button" class="ex-btn ex-btn--outline ex-btn--xs d-tag" data-tag="${esc(tg.slug)}" data-label="${esc(tg.label)}" title="Show only likes tagged ${esc(tg.label)}">${esc(tg.label)}</button>`)
         .join("")}</div>`;
     }
+    // What the image reading found: the text in each image and its caption, with the search terms marked.
+    html += visionHtml(full, highlight);
     enrichSlot.innerHTML = html;
   } catch {
     /* ignore */

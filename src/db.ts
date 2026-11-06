@@ -16,8 +16,11 @@ let _db: Database.Database | null = null;
 /** Open (and migrate) the singleton database. */
 export function db(): Database.Database {
   if (_db) return _db;
-  mkdirSync(DATA_DIR, { recursive: true });
-  mkdirSync(MEDIA_DIR, { recursive: true });
+  try {
+    mkdirSync(MEDIA_DIR, { recursive: true });
+  } catch (e) {
+    throw new Error(`x-likes can't create its data folder ${DATA_DIR} (${(e as NodeJS.ErrnoException).code}). Check XLIKES_DATA_DIR.`);
+  }
   const database = new Database(DB_PATH);
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");

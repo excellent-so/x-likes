@@ -7,27 +7,182 @@
     "created_at": "2024-05-01T12:00:00.000Z",
     "favorite_count": 1234,
     "media": [
-      { "type": "photo", "media_url_https": "https://pbs.twimg.com/media/GExample0001.jpg", "ext_alt_text": "a diagram of peer to peer sync" }
+      {
+        "type": "photo",
+        "media_url_https": "https://pbs.twimg.com/media/GExample0001.jpg",
+        "ext_alt_text": "a diagram of peer to peer sync"
+      }
     ],
     "entities": {
       "urls": [
-        { "expanded_url": "https://www.inkandswitch.com/local-first/", "display_url": "inkandswitch.com/local-first" }
+        {
+          "expanded_url": "https://www.inkandswitch.com/local-first/",
+          "display_url": "inkandswitch.com/local-first"
+        }
       ]
     }
   },
   {
     "rest_id": "1600000000000000002",
-    "core": { "user_results": { "result": { "legacy": { "screen_name": "rustlang", "name": "The Rust Programming Language" } } } },
+    "core": {
+      "user_results": {
+        "result": {
+          "legacy": {
+            "screen_name": "rustlang",
+            "name": "The Rust Programming Language"
+          }
+        }
+      }
+    },
     "legacy": {
       "full_text": "Ownership and borrowing eliminate whole classes of bugs at compile time. No GC, no data races.",
       "created_at": "Wed May 01 12:30:00 +0000 2024",
       "favorite_count": 999,
-      "entities": { "urls": [ { "expanded_url": "https://doc.rust-lang.org/book/", "display_url": "doc.rust-lang.org/book" } ] },
-      "extended_entities": { "media": [ { "type": "photo", "media_url_https": "https://pbs.twimg.com/media/GExample0002.jpg", "ext_alt_text": "rust logo" } ] }
+      "entities": {
+        "urls": [
+          {
+            "expanded_url": "https://doc.rust-lang.org/book/",
+            "display_url": "doc.rust-lang.org/book"
+          }
+        ]
+      },
+      "extended_entities": {
+        "media": [
+          {
+            "type": "photo",
+            "media_url_https": "https://pbs.twimg.com/media/GExample0002.jpg",
+            "ext_alt_text": "rust logo"
+          }
+        ]
+      }
     }
   },
   {
     "id": "1600000000000000003",
     "full_text": "A bare record with only id + text (no author) — should import as a pending like for `pnpm hydrate` to finish."
+  },
+  {
+    "id": "1600000000000000004",
+    "created_at": "2024-05-14 10:20:30 +00:00",
+    "full_text": "Launch replay: the booster comes back to the pad at night. https://t.co/ccc",
+    "media": [
+      {
+        "type": "video",
+        "url": "https://t.co/ccc",
+        "thumbnail": "https://pbs.twimg.com/ext_tw_video_thumb/1600000000000000004/pu/img/poster.jpg?name=thumb",
+        "original": "https://video.twimg.com/ext_tw_video/1600000000000000004/pu/vid/1280x720/clip.mp4?tag=12",
+        "ext_alt_text": null
+      }
+    ],
+    "screen_name": "launch_desk",
+    "name": "Launch Desk",
+    "profile_image_url": "https://pbs.twimg.com/profile_images/2/launch_desk_normal.jpg",
+    "user_id": "77",
+    "in_reply_to": null,
+    "retweeted_status": null,
+    "quoted_status": null,
+    "media_tags": [],
+    "favorite_count": 5000,
+    "retweet_count": 300,
+    "bookmark_count": 40,
+    "quote_count": 12,
+    "reply_count": 80,
+    "views_count": 250000,
+    "favorited": true,
+    "retweeted": false,
+    "bookmarked": false,
+    "url": "https://twitter.com/launch_desk/status/1600000000000000004"
+  },
+  {
+    "id": "1600000000000000005",
+    "created_at": "2024-05-15 08:00:00 +00:00",
+    "full_text": "We wrote up how the on-device OCR reads receipts: https://t.co/bbb https://t.co/ddd",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://t.co/ddd",
+        "thumbnail": "https://pbs.twimg.com/media/GExample0005?format=jpg&name=thumb",
+        "original": "https://pbs.twimg.com/media/GExample0005?format=jpg&name=orig",
+        "ext_alt_text": "A phone reading a paper receipt"
+      }
+    ],
+    "screen_name": "ocr_lab",
+    "name": "OCR Lab",
+    "profile_image_url": "https://pbs.twimg.com/profile_images/1/ocr_lab_normal.jpg",
+    "user_id": "42",
+    "in_reply_to": null,
+    "retweeted_status": null,
+    "quoted_status": null,
+    "media_tags": [],
+    "favorite_count": 321,
+    "retweet_count": 12,
+    "bookmark_count": 3,
+    "quote_count": 1,
+    "reply_count": 4,
+    "views_count": 9000,
+    "favorited": true,
+    "retweeted": false,
+    "bookmarked": false,
+    "url": "https://twitter.com/ocr_lab/status/1600000000000000005",
+    "metadata": {
+      "__typename": "Tweet",
+      "rest_id": "1600000000000000005",
+      "core": {
+        "user_results": {
+          "result": {
+            "__typename": "User",
+            "rest_id": "42",
+            "core": {
+              "screen_name": "ocr_lab",
+              "name": "OCR Lab",
+              "created_at": "Mon Jan 02 10:00:00 +0000 2017"
+            },
+            "avatar": {
+              "image_url": "https://pbs.twimg.com/profile_images/1/ocr_lab_normal.jpg"
+            },
+            "legacy": {
+              "followers_count": 1200
+            }
+          }
+        }
+      },
+      "legacy": {
+        "id_str": "1600000000000000005",
+        "created_at": "Wed May 15 08:00:00 +0000 2024",
+        "full_text": "We wrote up how the on-device OCR reads receipts: https://t.co/bbb https://t.co/ddd",
+        "lang": "en",
+        "favorite_count": 321,
+        "entities": {
+          "urls": [
+            {
+              "url": "https://t.co/bbb",
+              "expanded_url": "https://ocr.example/blog/on-device-receipts",
+              "display_url": "ocr.example/blog/on-device…"
+            }
+          ],
+          "media": [
+            {
+              "type": "photo",
+              "url": "https://t.co/ddd",
+              "media_url_https": "https://pbs.twimg.com/media/GExample0005.jpg"
+            }
+          ]
+        },
+        "extended_entities": {
+          "media": [
+            {
+              "type": "photo",
+              "url": "https://t.co/ddd",
+              "media_url_https": "https://pbs.twimg.com/media/GExample0005.jpg",
+              "ext_alt_text": "A phone reading a paper receipt",
+              "original_info": {
+                "width": 1200,
+                "height": 1600
+              }
+            }
+          ]
+        }
+      }
+    }
   }
 ]

@@ -1,5 +1,13 @@
 allowBuilds:
-  better-sqlite3: true
+  # better-sqlite3 13 ships prebuilt binaries for macOS, Linux and Windows (x64 and arm64), so its build step only
+  # downloads Node's headers and runs gyp (which needs Python) to compile nothing. Skipping it makes the install
+  # need neither. On another platform, set this to true to compile SQLite from source.
+  better-sqlite3: false
   esbuild: true
   protobufjs: true
   sharp: true
+
+# @xenova/transformers asks for sharp 0.32, which would load a second libvips next to the app's sharp 0.35
+# (macOS warns about duplicate classes) and download libvips from GitHub at install. One sharp serves both.
+overrides:
+  "@xenova/transformers>sharp": "^0.35.3"

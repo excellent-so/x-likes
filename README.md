@@ -19,7 +19,8 @@ Each stage is incremental: it keeps its own state for every like, so running it 
 2. **Hydrate.** Fetch each tweet from X's public embed endpoint (`cdn.syndication.twimg.com`, no login) for the
    author, full text and links, and download its images. A deleted tweet keeps the text your archive captured.
 3. **Enrich.**
-   - Articles: unwrap `t.co` links, fetch each linked page and keep its readable text (Mozilla Readability).
+   - Articles: fetch each page the tweet links to and keep its readable text (Mozilla Readability). The links come
+     expanded from the tweet's data, not as `t.co`. A dead link (404 or 410) is noted and not retried.
    - Images: a caption, the text in the image (OCR) and labels, from Claude or from an offline mock (see
      [Image text and tags](#image-text-and-tags-claude-or-the-offline-mock)).
    - Tags: topic tags and named entities from the tweet, article and image text.
@@ -29,9 +30,11 @@ Each stage is incremental: it keeps its own state for every like, so running it 
 
 ## Requirements
 
-- Node 22 or later.
+- Node 22 or later (tested on 22 and 24).
 - pnpm 11. The version is pinned in `package.json` (`packageManager`), so with Corepack enabled
   (`corepack enable`) `pnpm` runs that version.
+- `unzip`, to read your X archive straight from its `.zip` (macOS and most Linux have it). Without it, unzip the
+  archive yourself and pass the folder.
 
 ```sh
 git clone https://github.com/excellent-so/x-likes.git
@@ -39,13 +42,17 @@ cd x-likes
 pnpm install
 ```
 
-The first `pnpm enrich` downloads the embedding model (about 23 MB) once.
+The install compiles nothing: SQLite, sharp and the embedding runtime come prebuilt, so it needs no C++ toolchain or
+Python. (On a platform better-sqlite3 has no binary for, set `better-sqlite3: true` under `allowBuilds` in
+`pnpm-workspace.yaml` to build it from source.) The first `pnpm enrich` downloads the embedding model (about 23 MB)
+once. x-likes is tested on macOS and Linux.
 
 ## Try the demo
 
 No account, key or archive needed. This writes 14 sample likes in the format of X's export, with placeholder
 images and local article pages, and runs the whole pipeline on them. The tweets and images come from local files;
-the network is used only for the one-time model download and for the 3 real web pages that some samples link to.
+the network is used only for the one-time model download and for the 3 web links some samples carry. One of those
+is made up, so the articles line reports 1 dead link.
 
 ```sh
 pnpm cli mock-archive ./mock-archive     # a sample archive in X's export format
@@ -59,7 +66,11 @@ pnpm serve                                # http://localhost:4321
 
 Then search for *programs that function with no network*. The default sort (Newest) matches words, and no like
 has all of them, so the app offers **Search by meaning**. Choose it (or open Filter and pick Best match) and the
-tweet about local-first software comes first, although its text has none of those words.
+tweet about local-first software comes first, although its text has none of those words. Search for *fts5* and the
+SQLite tweet comes up from the text in its screenshot: open it to see "Text in the image".
+
+The two `export` lines stay set in that terminal. Open a new one (or run
+`unset XLIKES_DATA_DIR XLIKES_MOCK_HYDRATION`) before you use your real likes.
 
 ## Use it with your real likes
 
@@ -86,10 +97,13 @@ pnpm ingest-export ~/Downloads/twitter-likes.json   # the export already holds e
 pnpm enrich
 ```
 
-Importing is idempotent, so re-export and re-import whenever you like to pick up new likes. `docs/X-API.md` compares
-the archive, the API and the open-source tools.
+In the exporter, turn on **Include all metadata** before you export: only the metadata carries each tweet's links,
+so without it x-likes gets the text, author and media but no articles. Importing is idempotent, so re-export and
+re-import whenever you like to pick up new likes. `docs/X-API.md` compares the archive, the API and the
+open-source tools.
 
-Each enrichment stage also runs on its own, and each takes `--limit N` and `--retry-errors`:
+Each enrichment stage also runs on its own, and each takes `--limit N` (the next N likes) and `--retry-errors`
+(also try again the likes that failed, up to 4 tries each). `pnpm stats` says what's in the database:
 
 ```sh
 pnpm cli enrich:articles   pnpm cli enrich:images
@@ -97,11 +111,26 @@ pnpm cli enrich:tags       pnpm cli enrich:embed
 pnpm stats
 ```
 
+`pnpm cli` with no command lists every command. When a stage has failures, it prints the reason under its line.
+
 ## Image text and tags: Claude or the offline mock
 
 Real OCR needs an Anthropic API key. With `ANTHROPIC_API_KEY` set, in your shell or in `.env`, `pnpm enrich` sends
-each downloaded image (JPEG, PNG, GIF or WebP) and its tweet's text to Claude for a caption, the text in the image
-and labels, and sends each like's tweet, article and image text to Claude for tags.
+each downloaded image and its tweet's text to Claude for a caption, the text in the image and labels, and sends
+each like's tweet, article and image text to Claude for tags. JPEG, PNG, GIF and WebP go as they are; anything else
+(an SVG, an AVIF, an image over 3.75 MB) is converted to a PNG first.
+
+If Claude refuses the key, the model or the account's credit, `pnpm enrich` stops at the first request and says
+what to fix. Nothing is marked failed: run it again once it's fixed and it picks up where it stopped.
+
+To see real OCR on the demo, read its images with Claude in a second demo store. It's 7 images, about a cent:
+
+```sh
+export XLIKES_DATA_DIR=./data-claude XLIKES_MOCK_HYDRATION=./mock-archive/mock-hydrated.json
+pnpm ingest ./mock-archive && pnpm hydrate
+ANTHROPIC_API_KEY=sk-ant-... pnpm cli enrich:images
+pnpm serve       # open the agent-loop like: "Text in the image" is what Claude read
+```
 
 Without a key, both stages use an offline mock. Image captions come from the image's alt text or the tweet's text,
 and the mock reads no text out of real photos or screenshots. It does read the text written into the demo's SVG
@@ -115,8 +144,10 @@ placeholder images, which is how OCR search works in the demo. Mock tags are the
 | `XLIKES_AI_MODEL` | The Claude model | `claude-haiku-4-5-20251001` |
 | `XLIKES_EMBED_PROVIDER` | `local` (MiniLM on your machine) or `mock` | `local` |
 | `XLIKES_DATA_DIR` | Where the database and media live | `./data` |
+| `XLIKES_MOCK_HYDRATION` | A JSON file of tweets to hydrate from instead of X (the demo's `mock-hydrated.json`) | unset |
 | `XLIKES_PRICE_IN`, `XLIKES_PRICE_OUT` | Dollars per million input and output tokens, for the cost estimate | `1` and `5` |
 | `PORT` | The web app's port (`pnpm serve --port N` works too) | `4321` |
+| `XLIKES_DEBUG` | Set to `1` to print the stack trace with an error | unset |
 
 Any of these can go in `.env` at the project root (`.env` is git-ignored). A variable set in your shell wins over
 the file.
@@ -166,18 +197,16 @@ The MCP server gives Claude Code, or Claude Desktop, read-only tools over the da
 it at user scope, with `/path/to/x-likes` replaced by where you cloned this repo:
 
 ```sh
-claude mcp add x-likes --scope user -- pnpm --dir /path/to/x-likes mcp
+claude mcp add x-likes --scope user -- node /path/to/x-likes/node_modules/tsx/dist/cli.mjs /path/to/x-likes/src/mcp-server.ts
 claude mcp get x-likes              # check that it connects
 claude mcp remove x-likes -s user   # to undo
 ```
 
-If Claude can't find `pnpm` on its PATH, start the server with Node:
+It starts the server with Node rather than `pnpm --dir /path/to/x-likes mcp`. Claude starts servers from your
+project's folder, and there Corepack picks the pnpm version for that folder, not x-likes', so the pnpm form can
+fail to connect. `pnpm mcp` from inside the x-likes folder starts the same server by hand.
 
-```sh
-claude mcp add x-likes --scope user -- node /path/to/x-likes/node_modules/tsx/dist/cli.mjs /path/to/x-likes/src/mcp-server.ts
-```
-
-To use a different data folder, add `-e XLIKES_DATA_DIR=/path/to/data` before the `--`.
+To use a different data folder, add `-e XLIKES_DATA_DIR=/absolute/path/to/data` before the `--`.
 
 The tools Claude can call:
 
@@ -197,8 +226,10 @@ and URLs, and never image data.
 
 ## The web app
 
-- `pnpm serve` opens it at http://localhost:4321. Every like has its own link, `/?id=<tweet id>`, the same id the
-  MCP tools use.
+- `pnpm serve` opens it at http://localhost:4321. It answers only on this machine, not to others on your network.
+- Every like has its own link, `/?id=<tweet id>`, the same id the MCP tools use. A like's detail shows its linked
+  article, its tags, the text read out of each image ("Text in the image") and each image's caption, and related
+  likes.
 - Press `/` to search. In an open like, the left and right arrow keys step through the results and Esc closes it.
 - It's light by default; the Dark button switches to dark, and the page remembers your choice.
 - Its look is `@excellent-so/kit` 0.2.1 (MIT), copied into `web/kit/`.
@@ -223,18 +254,39 @@ src/mock-archive.ts  the demo archive generator
 web/                 the web app (no build step); web/kit/ holds @excellent-so/kit
 ```
 
-The database and media under `data/` are git-ignored, so your likes and images never get committed.
+The database and media under `data/` are git-ignored, so your likes and images never get committed. x-likes writes
+nowhere else, apart from the embedding model, which is cached inside `node_modules/@xenova/transformers/.cache/`.
+It reads a `.zip` archive in place, without extracting it.
 
-## Privacy
+## Privacy and the network
 
-Your likes stay in a SQLite file on your machine. x-likes goes online to fetch the tweets and images you liked
-(from X's embed endpoint), the pages they link to and, once, the embedding model. It sends data to Anthropic only
-if you set `ANTHROPIC_API_KEY`. The mock providers and the embeddings make no network calls.
+Your likes stay in a SQLite file on your machine, and the web app answers only on this machine. x-likes goes online
+for these, and nothing else:
+
+| What | Where | When |
+|---|---|---|
+| Each liked tweet's text, author and links (only its id is sent) | `cdn.syndication.twimg.com` | `pnpm hydrate` |
+| The tweet's images, avatar, and a video when you first play it | `pbs.twimg.com`, `video.twimg.com` | `pnpm hydrate`, `pnpm serve` |
+| Each page a like links to | that page's site | `pnpm enrich` (articles) |
+| The embedding model, once | `huggingface.co` | the first `pnpm enrich` |
+| Each image and the tweet, article and image text, for captions, OCR and tags | `api.anthropic.com` | `pnpm enrich`, only with `ANTHROPIC_API_KEY` |
+| Your recent likes, with your X keys | `api.twitter.com` | `pnpm cli x-check` and `fetch-likes` only |
+
+The mock providers and the embeddings make no network calls. There is no telemetry.
+
+## Uninstall
+
+Delete the folder you cloned: the code, `node_modules` (with the cached model) and your `data/` all live there.
+If you registered the MCP server, run `claude mcp remove x-likes -s user`. pnpm keeps a shared package store
+(`pnpm store path` shows where); `pnpm store prune` clears what nothing uses any more.
 
 ## Tests
 
 `pnpm test` runs the suite against a temporary database built from the demo archive and the fixtures, and
-`pnpm typecheck` runs the TypeScript compiler.
+`pnpm typecheck` runs the TypeScript compiler. The suite never calls Claude or the X API: the Claude tests run
+against a local stand-in. It does use the network for the embedding model (once) and a few public web pages.
+CI runs both on Node 22 and 24 (`.github/workflows/test.yml`). `CONTRIBUTING.md` says how to send a change, and
+`SECURITY.md` how to report a vulnerability.
 
 ## License
 

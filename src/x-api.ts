@@ -57,7 +57,7 @@ export interface AccessResult {
 /** One read-only call that reports exactly why likes reading does or doesn't work. */
 export async function checkAccess(): Promise<AccessResult> {
   if (!xConfigured()) {
-    return { configured: false, ok: false, status: 0, reason: "no credentials", hint: "fill in .env" };
+    return { configured: false, ok: false, status: 0, reason: "no credentials", hint: "copy .env.example to .env and fill in the X_ values" };
   }
   const { status, json, text } = await get(`/2/users/${X.userId}/liked_tweets`, { max_results: "5" });
   if (status === 200) {
@@ -85,7 +85,8 @@ export interface FetchReport {
  * importer produces), so a normal `pnpm hydrate` + `pnpm enrich` finishes them.
  */
 export async function fetchLikes(opts: { max?: number; onPage?: (n: number, total: number) => void } = {}): Promise<FetchReport> {
-  if (!xConfigured()) throw new Error("X API not configured — fill in .env");
+  if (!xConfigured())
+    throw new Error("The X API keys aren't set. Copy .env.example to .env and fill in the X_ values (README: Keep current with the X API).");
   const max = opts.max ?? 200;
   const report: FetchReport = { fetched: 0, inserted: 0, pages: 0, stopped: "done" };
 
