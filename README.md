@@ -7,6 +7,8 @@ your machine, fetches each tweet's text and images, and then enriches every like
 article, a caption and OCR for every image, and topic tags. You search it by keyword or by meaning in a local web
 app, and an MCP server lets Claude search it for you.
 
+Docs and how to use it: https://playbook.excellent.so/x-likes
+
 <img width="700" alt="The x-likes web app on its demo data: a search field above a grid of liked posts, some with images" src="./web/screenshot.png" />
 
 The screenshot shows the built-in demo data.
